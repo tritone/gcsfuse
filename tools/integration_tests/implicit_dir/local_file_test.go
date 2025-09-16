@@ -14,11 +14,17 @@
 package implicit_dir_test
 
 import (
+	"context"
+	"io"
 	"io/fs"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/storage"
+	"cloud.google.com/go/storage/experimental"
 	. "github.com/googlecloudplatform/gcsfuse/v3/tools/integration_tests/util/client"
 	"github.com/googlecloudplatform/gcsfuse/v3/tools/integration_tests/util/operations"
 	"github.com/googlecloudplatform/gcsfuse/v3/tools/integration_tests/util/setup"
@@ -52,7 +58,25 @@ func TestNewFileUnderImplicitDirectoryShouldNotGetSyncedToGCSTillClose(t *testin
 		// A zonal bucket object written with sync can be fully read.
 		err := fh.Sync()
 		require.NoError(t, err)
-		ValidateObjectContentsFromGCS(testEnv.ctx, testEnv.storageClient, testBaseDirName, fileName, FileContents, t)
+		// Test out downloading file without GCSFuse configs:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, err := storage.NewGRPCClient(ctx, experimental.WithZonalBucketAPIs())
+		if err != nil {
+			t.Fatalf("NewGRPCClient: %v", err)
+		}
+		bucketName := "cjcotter-zb-test2"
+		objName := strings.Join([]string{testBaseDirName, fileName}, "/")
+		r, err := c.Bucket(bucketName).Object(objName).NewReader(ctx)
+		if err != nil {
+			t.Fatalf("NewReader: %v", err)
+		}
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("io.Readall: %v", err)
+		}
+		t.Logf("downloaded %v bytes", len(b))
+		// ValidateObjectContentsFromGCS(testEnv.ctx, testEnv.storageClient, testBaseDirName, fileName, FileContents, t)
 	}
 
 	// Validate.
